@@ -396,6 +396,108 @@ html, body {
 .items-table tr:hover { background: var(--primary-soft); }
 .items-table .num { font-family: 'Menlo', monospace; text-align: left; direction: ltr; }
 
+/* ============ SCF Badges (in items table) ============ */
+.scf-cell {
+  min-width: 180px;
+  padding: 8px !important;
+}
+.scf-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  color: #fff;
+  border-radius: 6px;
+  font-family: 'Menlo', monospace;
+  font-weight: 700;
+  font-size: 12px;
+  box-shadow: var(--shadow-sm);
+}
+.scf-badge-empty {
+  background: #e5e7eb;
+  color: var(--text-mute);
+}
+.scf-category {
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 4px;
+  font-weight: 600;
+}
+.scf-name {
+  font-size: 10px;
+  color: var(--text-mute);
+  margin-top: 2px;
+  font-style: italic;
+}
+
+/* ============ Journal Entry (قيد اليومية) ============ */
+.journal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: linear-gradient(135deg, #f0f9ff, #ede9fe);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.journal-info { flex: 1; font-size: 13px; line-height: 1.8; }
+.journal-info div { margin-bottom: 4px; }
+
+.journal-badge {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 13px;
+}
+.je-balanced   { background: var(--success-soft); color: var(--success); border: 2px solid var(--success); }
+.je-unbalanced { background: var(--danger-soft);  color: var(--danger);  border: 2px solid var(--danger); }
+
+.journal-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 16px;
+}
+.journal-table th {
+  background: linear-gradient(135deg, #1e2a4a, #2a3a63);
+  color: #fff;
+  padding: 12px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+}
+.journal-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.journal-table tr:nth-child(even) { background: #fafbff; }
+.journal-table tr:hover { background: #f0f9ff; }
+.journal-table tfoot td {
+  background: linear-gradient(135deg, #f0f9ff, #ede9fe);
+  font-weight: 900;
+  font-size: 14px;
+  border-top: 2px solid var(--primary);
+  padding: 12px;
+}
+.je-account { font-family: 'Menlo', monospace; color: var(--primary-dark); }
+.je-name { color: var(--text); font-weight: 600; }
+.je-libelle { color: var(--text-mute); font-size: 12px; font-style: italic; }
+.je-debit  { color: var(--success); font-family: 'Menlo', monospace; }
+.je-credit { color: var(--danger);  font-family: 'Menlo', monospace; }
+
+.journal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.journal-actions .btn { flex: 0 0 auto; padding: 10px 20px; }
+
 /* ============ Notes ============ */
 .notes-block {
   margin-top: 16px;

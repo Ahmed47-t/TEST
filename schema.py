@@ -82,7 +82,7 @@ INVOICE_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "description": {"type": "string", "nullable": True,
-                                    "description": "اسم المنتج/الخدمة"},
+                                    "description": "اسم المنتج/الخدمة كما هو مكتوب"},
                     "quantity": {"type": "number", "nullable": True,
                                  "description": "الكمية (رقم عشري)"},
                     "unit_price": {"type": "number", "nullable": True,
@@ -91,6 +91,26 @@ INVOICE_SCHEMA = {
                                  "description": "نسبة الضريبة كنسبة مئوية (19، 9، 0)"},
                     "total_ht": {"type": "number", "nullable": True,
                                  "description": "الإجمالي بدون ضريبة لهذا السطر"},
+                    "scf_account": {"type": "string", "nullable": True,
+                                    "description": (
+                                        "رقم الحساب المحاسبي حسب النظام المحاسبي "
+                                        "المالي الجزائري SCF. مثال: '607' للوازم مكتبية، "
+                                        "'2183' للحواسيب، '6262' للاتصالات. "
+                                        "اختر من قائمة الحسابات المُقدَّمة في البرومبت."
+                                    )},
+                    "scf_account_name": {"type": "string", "nullable": True,
+                                         "description": (
+                                             "اسم الحساب بالفرنسية كما هو في SCF "
+                                             "(للتحقق من صحّة الرقم). مثال: "
+                                             "'Achats non stockés de matières et fournitures'"
+                                         )},
+                    "category": {"type": "string", "nullable": True,
+                                 "description": (
+                                     "تصنيف مبسّط للسلعة/الخدمة بالعربية: "
+                                     "'إعلام آلي', 'أثاث', 'لوازم مكتبية', "
+                                     "'اتصالات', 'كهرباء', 'خدمات', 'بضاعة للبيع', "
+                                     "'مواد أولية', 'نقل', 'أخرى'"
+                                 )},
                 },
             },
         },

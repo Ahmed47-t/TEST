@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>محاسب DZ الذكي — Gemini Vision للفواتير الجزائرية</title>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
 </head>
 <body>
 
@@ -142,8 +142,9 @@
       <div class="tabs">
         <button class="tab active" data-tab="header">📄 معلومات الفاتورة</button>
         <button class="tab" data-tab="parties">🏢 المورّد والزبون</button>
-        <button class="tab" data-tab="items">📦 المنتجات</button>
+        <button class="tab" data-tab="items">📦 المنتجات + SCF</button>
         <button class="tab" data-tab="totals">💰 المجاميع</button>
+        <button class="tab" data-tab="journal">📒 قيد اليومية</button>
         <button class="tab" data-tab="json">🔧 JSON</button>
       </div>
 
@@ -245,6 +246,13 @@
         </div>
       </div>
 
+      <!-- تبويب قيد اليومية (SCF) -->
+      <div class="tab-content" data-tab="journal">
+        <div id="journal-container">
+          <p class="empty-hint">سيظهر هنا قيد اليومية المحاسبي (SCF) الجاهز للنسخ.</p>
+        </div>
+      </div>
+
       <!-- تبويب JSON -->
       <div class="tab-content" data-tab="json">
         <pre id="json-view" class="json-view">// سيظهر ناتج JSON هنا بعد التحليل</pre>
@@ -269,6 +277,6 @@
 
 </main>
 
-<script src="{{ url_for('static', filename='app.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='app.js') }}?v=4"></script>
 </body>
 </html>

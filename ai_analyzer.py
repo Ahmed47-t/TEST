@@ -26,6 +26,11 @@ from PIL import Image
 
 from prompt_builder import SYSTEM_PROMPT, build_user_prompt
 from schema import INVOICE_SCHEMA
+from scf_accounts import (
+    determine_tva_account,
+    get_account_info,
+    suggest_account_for_item,
+)
 
 
 # =========================================================
@@ -178,6 +183,152 @@ class InvoiceAnalyzer:
             return False, f"{type(e).__name__}: {e}"
 
     # ---------------------------------------------------------
+    # إثراء SCF: يكمل التصنيف إن لم يعطِه Gemini + يبني قيد اليومية
+    # ---------------------------------------------------------
+    @staticmethod
+    def _enrich_scf(data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        يُثري البيانات بمعلومات SCF:
+          1. يكمل scf_account لأي منتج ينقصه (fallback على الكلمات المفتاحية)
+          2. يتحقّق من أن رقم الحساب موجود في مخطط SCF
+          3. يبني قيد اليومية الجاهز (journal entry)
+        """
+        items = data.get("items") or []
+
+        # 1) إكمال scf_account الناقص
+        for item in items:
+            code = item.get("scf_account")
+            if not code:
+                # جرّب استنتاج من الوصف
+                suggested = suggest_account_for_item(item.get("description", ""))
+                if suggested:
+                    item["scf_account"] = suggested
+                    info = get_account_info(suggested)
+                    if info and not item.get("scf_account_name"):
+                        item["scf_account_name"] = info["name_fr"]
+                    if not item.get("category"):
+                        item["category"] = info["name_ar"] if info else "أخرى"
+
+            # تحقّق أن الحساب موجود، وإلا استعمل 607 (استهلاكيات) كافتراضي
+            if code and not get_account_info(code):
+                # الحساب المُعاد غير موجود في SCF — احتفظ به لكن أضف حساباً افتراضياً
+                item["scf_account_original"] = code
+                item["scf_account"] = "607"  # استهلاكيات
+                item["scf_account_name"] = "Achats non stockés de matières et fournitures"
+
+        # 2) بناء قيد اليومية
+        journal_entry = InvoiceAnalyzer._build_journal_entry(data)
+        data["journal_entry"] = journal_entry
+
+        return data
+
+    @staticmethod
+    def _build_journal_entry(data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        يبني قيد اليومية المحاسبي (Écriture comptable) من الفاتورة.
+
+        قيد شراء نموذجي:
+          Débit  6xx  ... Charges (المصاريف)          HT
+          Débit  44566 ou 44562 ... TVA déductible    TVA
+          Débit  6414 ... Droits de timbre            (إن وُجد)
+          Crédit 401 ... Fournisseur                  TTC
+        """
+        entries = []
+        items = data.get("items") or []
+        totals = data.get("totals") or {}
+        supplier = data.get("supplier") or {}
+        invoice_date = data.get("invoice_date")
+        invoice_number = data.get("invoice_number")
+
+        supplier_name = supplier.get("name", "المورد")
+        libelle = f"Facture {invoice_number or ''} - {supplier_name}".strip(" -")
+
+        # تجميع المبالغ حسب الحساب (لو عدّة منتجات لنفس الحساب)
+        charges_by_account: Dict[str, Dict[str, Any]] = {}
+        has_immobilisation = False
+
+        for item in items:
+            code = item.get("scf_account") or "607"
+            ht = item.get("total_ht") or 0
+            if not ht:
+                # احسب من quantity * unit_price إن كان total_ht مفقوداً
+                qty = item.get("quantity") or 0
+                pu = item.get("unit_price") or 0
+                ht = qty * pu
+
+            if code not in charges_by_account:
+                info = get_account_info(code)
+                charges_by_account[code] = {
+                    "account": code,
+                    "name": info["name_fr"] if info else item.get("scf_account_name", ""),
+                    "amount": 0,
+                }
+            charges_by_account[code]["amount"] += float(ht)
+
+            # هل هذا حساب من الطبقة 2 (تثبيتات)؟
+            if str(code).startswith("2"):
+                has_immobilisation = True
+
+        # 1) سطور الديْن (Débit) — المصاريف/التثبيتات
+        for code, info in charges_by_account.items():
+            entries.append({
+                "account": code,
+                "name": info["name"],
+                "libelle": libelle,
+                "debit": round(info["amount"], 2),
+                "credit": 0,
+            })
+
+        # 2) سطر TVA (Débit) إن كانت > 0
+        tva_amount = totals.get("tva_amount") or 0
+        if tva_amount:
+            tva_account = determine_tva_account(has_immobilisation)
+            tva_info = get_account_info(tva_account)
+            entries.append({
+                "account": tva_account,
+                "name": tva_info["name_fr"] if tva_info else "TVA déductible",
+                "libelle": libelle,
+                "debit": round(float(tva_amount), 2),
+                "credit": 0,
+            })
+
+        # 3) حقوق الطابع (Débit) إن وُجدت
+        stamp = totals.get("stamp_duty") or 0
+        if stamp:
+            entries.append({
+                "account": "6414",
+                "name": "Droits de timbre",
+                "libelle": libelle,
+                "debit": round(float(stamp), 2),
+                "credit": 0,
+            })
+
+        # 4) سطر المورد (Crédit) — المجموع الإجمالي TTC
+        ttc = totals.get("total_ttc") or 0
+        supplier_account = "404" if has_immobilisation else "401"
+        supplier_name_full = supplier.get("name", "Fournisseur")
+        supplier_label = "Fournisseurs d'immobilisations" if has_immobilisation else "Fournisseurs"
+        entries.append({
+            "account": supplier_account,
+            "name": f"{supplier_label} - {supplier_name_full}",
+            "libelle": libelle,
+            "debit": 0,
+            "credit": round(float(ttc), 2),
+        })
+
+        total_debit = sum(e["debit"] for e in entries)
+        total_credit = sum(e["credit"] for e in entries)
+
+        return {
+            "date": invoice_date,
+            "libelle": libelle,
+            "entries": entries,
+            "total_debit": round(total_debit, 2),
+            "total_credit": round(total_credit, 2),
+            "balanced": abs(total_debit - total_credit) < 0.01,
+        }
+
+    # ---------------------------------------------------------
     # التحقّق الحسابي (منع الهلوسة)
     # ---------------------------------------------------------
     @staticmethod
@@ -255,6 +406,8 @@ class InvoiceAnalyzer:
 
             if success:
                 print(f"✅ {model_label} نجح في {elapsed:.1f}s", flush=True)
+                # إثراء بـ SCF + بناء قيد اليومية
+                output = self._enrich_scf(output)
                 result.success = True
                 result.data = output
                 result.model_used = model_name
@@ -268,6 +421,13 @@ class InvoiceAnalyzer:
                         print(f"   {w}", flush=True)
                 else:
                     print(f"   ✔️ التحقّق الحسابي: نجح", flush=True)
+
+                # طباعة ملخّص قيد اليومية
+                je = output.get("journal_entry", {})
+                if je.get("entries"):
+                    print(f"   📒 قيد اليومية: {len(je['entries'])} سطر، "
+                          f"{'متوازن ✓' if je.get('balanced') else 'غير متوازن ✗'}",
+                          flush=True)
                 break
             else:
                 print(f"❌ {model_label} فشل ({elapsed:.1f}s): {output}", flush=True)

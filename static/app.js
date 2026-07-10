@@ -196,6 +196,9 @@ function renderResults(payload) {
   // 3) المنتجات
   renderItems(data.items || []);
 
+  // 3.5) قيد اليومية (SCF)
+  renderJournal(data.journal_entry);
+
   // 4) المجاميع
   const totals = data.totals || {};
   ["total_ht", "tva_amount", "stamp_duty", "discount", "total_ttc"].forEach(k => {
@@ -257,6 +260,13 @@ function renderItems(items) {
       <td class="num">${formatNumber(it.unit_price)}</td>
       <td class="num">${it.tva_rate !== null && it.tva_rate !== undefined ? it.tva_rate + "%" : "—"}</td>
       <td class="num"><strong>${formatNumber(it.total_ht)}</strong></td>
+      <td class="scf-cell">
+        ${it.scf_account
+          ? `<span class="scf-badge">${escapeHtml(it.scf_account)}</span>`
+          : '<span class="scf-badge scf-badge-empty">—</span>'}
+        ${it.category ? `<div class="scf-category">${escapeHtml(it.category)}</div>` : ''}
+        ${it.scf_account_name ? `<div class="scf-name">${escapeHtml(it.scf_account_name)}</div>` : ''}
+      </td>
     </tr>
   `).join("");
 
@@ -270,12 +280,121 @@ function renderItems(items) {
           <th>سعر الوحدة</th>
           <th>TVA %</th>
           <th>الإجمالي HT</th>
+          <th>🏦 حساب SCF</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
   `;
 }
+
+// ----------------------------------------------------------
+// عرض قيد اليومية (SCF Journal Entry)
+// ----------------------------------------------------------
+function renderJournal(journal) {
+  const container = $("#journal-container");
+  if (!journal || !journal.entries || journal.entries.length === 0) {
+    container.innerHTML = '<p class="empty-hint">قيد اليومية غير متاح.</p>';
+    return;
+  }
+
+  const rows = journal.entries.map(e => `
+    <tr>
+      <td class="je-account"><strong>${escapeHtml(e.account)}</strong></td>
+      <td class="je-name">${escapeHtml(e.name || "")}</td>
+      <td class="je-libelle">${escapeHtml(e.libelle || "")}</td>
+      <td class="je-debit num">${e.debit ? formatNumber(e.debit) : ""}</td>
+      <td class="je-credit num">${e.credit ? formatNumber(e.credit) : ""}</td>
+    </tr>
+  `).join("");
+
+  const badgeClass = journal.balanced ? "je-balanced" : "je-unbalanced";
+  const badgeText  = journal.balanced ? "✅ القيد متوازن" : "⚠️ القيد غير متوازن";
+
+  container.innerHTML = `
+    <div class="journal-header">
+      <div class="journal-info">
+        <div><strong>📅 التاريخ:</strong> ${journal.date || "—"}</div>
+        <div><strong>📝 البيان:</strong> ${escapeHtml(journal.libelle || "")}</div>
+      </div>
+      <div class="journal-badge ${badgeClass}">${badgeText}</div>
+    </div>
+
+    <table class="journal-table">
+      <thead>
+        <tr>
+          <th>الحساب</th>
+          <th>التسمية</th>
+          <th>البيان</th>
+          <th>مدين (Débit)</th>
+          <th>دائن (Crédit)</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3"><strong>المجموع</strong></td>
+          <td class="num"><strong>${formatNumber(journal.total_debit)}</strong></td>
+          <td class="num"><strong>${formatNumber(journal.total_credit)}</strong></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <div class="journal-actions">
+      <button class="btn btn-ghost" onclick="copyJournalToClipboard()">📋 نسخ القيد</button>
+      <button class="btn btn-ghost" onclick="exportJournalCSV()">📥 تصدير CSV</button>
+    </div>
+  `;
+}
+
+// نسخ قيد اليومية إلى الحافظة (تنسيق نصّي)
+window.copyJournalToClipboard = function() {
+  if (!lastResult?.data?.journal_entry) return;
+  const je = lastResult.data.journal_entry;
+  let text = `Date: ${je.date}\nLibellé: ${je.libelle}\n\n`;
+  text += "Compte  | Nom".padEnd(50) + " | Débit         | Crédit\n";
+  text += "-".repeat(90) + "\n";
+  je.entries.forEach(e => {
+    const line = `${e.account.padEnd(7)} | ${(e.name || "").padEnd(40).slice(0, 40)} | ${
+      (e.debit ? formatNumber(e.debit) : "").padStart(13)
+    } | ${
+      (e.credit ? formatNumber(e.credit) : "").padStart(13)
+    }`;
+    text += line + "\n";
+  });
+  text += "-".repeat(90) + "\n";
+  text += `Total`.padEnd(50) + ` | ${formatNumber(je.total_debit).padStart(13)} | ${formatNumber(je.total_credit).padStart(13)}\n`;
+
+  navigator.clipboard.writeText(text).then(() => {
+    showToast("✅ تم نسخ القيد إلى الحافظة", "success");
+  });
+};
+
+// تصدير قيد اليومية كـ CSV
+window.exportJournalCSV = function() {
+  if (!lastResult?.data?.journal_entry) return;
+  const je = lastResult.data.journal_entry;
+  let csv = "Date,Compte,Nom,Libellé,Débit,Crédit\n";
+  je.entries.forEach(e => {
+    const row = [
+      je.date || "",
+      e.account,
+      `"${(e.name || "").replace(/"/g, '""')}"`,
+      `"${(e.libelle || "").replace(/"/g, '""')}"`,
+      e.debit || "",
+      e.credit || "",
+    ].join(",");
+    csv += row + "\n";
+  });
+
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `journal_${je.date || "invoice"}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 // ----------------------------------------------------------
 // أدوات مساعدة
