@@ -50,6 +50,18 @@ DEFAULT_MODELS = [
         "accuracy": "~89% - Fallback مستقر",
         "free_tier": "~1500 طلب/يوم",
     },
+    {
+        "name": "gemini-flash-latest",
+        "label": "Gemini Flash Latest",
+        "accuracy": "~88% - alias مستقر",
+        "free_tier": "متغيّرة",
+    },
+    {
+        "name": "gemini-2.0-flash-lite",
+        "label": "Gemini 2.0 Flash Lite",
+        "accuracy": "~85% - أخفّ نسخة",
+        "free_tier": "أعلى حصّة",
+    },
 ]
 
 
@@ -264,7 +276,35 @@ class InvoiceAnalyzer:
                 continue
 
         if not result.success:
-            result.error = "فشلت جميع النماذج. راجع رسائل الخطأ أعلاه."
+            # حلّل نوع الخطأ الأكثر شيوعاً وأعطِ نصيحة للمستخدم
+            all_errors = " ".join(a.get("error", "") for a in result.attempts)
+
+            if "RESOURCE_EXHAUSTED" in all_errors or "429" in all_errors:
+                result.error = (
+                    "🚫 تجاوزت الحصّة اليومية المجانية لكل نماذج Gemini.\n\n"
+                    "الحلول:\n"
+                    "1. انتظر 24 ساعة (الحصّة تتجدّد يومياً)\n"
+                    "2. أنشئ مفتاح API جديد في مشروع Google Cloud جديد:\n"
+                    "   → https://aistudio.google.com/app/apikey\n"
+                    "   → اضغط 'Create API key in NEW project'\n"
+                    "3. أو ادفع مقابل الاستعمال (~$0.0001/فاتورة)"
+                )
+            elif "PERMISSION_DENIED" in all_errors or "403" in all_errors:
+                result.error = (
+                    "🔒 مشروعك على Google Cloud مرفوض من الوصول للنموذج.\n\n"
+                    "الحل: أنشئ مفتاح API جديد في مشروع جديد:\n"
+                    "→ https://aistudio.google.com/app/apikey\n"
+                    "→ اضغط 'Create API key in NEW project'"
+                )
+            elif "API_KEY_INVALID" in all_errors or "401" in all_errors:
+                result.error = (
+                    "🔑 مفتاح GEMINI_API_KEY غير صحيح.\n\n"
+                    "تحقّق من ملف .env — يجب أن يكون بهذا الشكل:\n"
+                    "GEMINI_API_KEY=AIzaSy...\n"
+                    "(بدون علامات اقتباس، بدون مسافات)"
+                )
+            else:
+                result.error = "فشلت جميع النماذج. راجع رسائل الخطأ في PowerShell."
             print(f"\n❌ فشل التحليل بعد {len(result.attempts)} محاولات", flush=True)
 
         result.elapsed_seconds = time.time() - t_total

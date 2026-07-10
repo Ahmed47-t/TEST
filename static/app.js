@@ -302,10 +302,48 @@ function escapeHtml(s) {
 }
 
 function showToast(msg, type = "error") {
+  // للرسائل الطويلة (متعدّدة الأسطر)، نستعمل modal بدل toast
+  if (msg.includes("\n") && msg.length > 100) {
+    showModal(msg, type);
+    return;
+  }
   toast.textContent = msg;
   toast.className = "toast " + (type === "success" ? "success" : type === "warning" ? "warning" : "");
   toast.hidden = false;
-  setTimeout(() => { toast.hidden = true; }, 4000);
+  setTimeout(() => { toast.hidden = true; }, 5000);
+}
+
+function showModal(msg, type = "error") {
+  // إنشاء modal بسيط للرسائل الطويلة
+  const existing = document.getElementById("error-modal");
+  if (existing) existing.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "error-modal";
+  modal.style.cssText = `
+    position: fixed; inset: 0; background: rgba(15,23,42,0.7);
+    display: grid; place-items: center; z-index: 1001;
+    backdrop-filter: blur(6px);
+  `;
+  const bgColor = type === "error" ? "#dc2626" : type === "warning" ? "#d97706" : "#059669";
+  modal.innerHTML = `
+    <div style="background:#fff; padding:28px 32px; border-radius:12px;
+                max-width:520px; box-shadow:0 20px 40px rgba(0,0,0,.3);
+                direction:rtl; text-align:right; border-top:5px solid ${bgColor}">
+      <pre style="white-space:pre-wrap; font-family:'Cairo',sans-serif;
+                  font-size:14px; line-height:1.8; color:#1f2937; margin:0">${escapeHtml(msg)}</pre>
+      <button onclick="document.getElementById('error-modal').remove()"
+              style="margin-top:20px; padding:10px 20px; background:${bgColor};
+                     color:#fff; border:none; border-radius:8px; cursor:pointer;
+                     font-family:'Cairo',sans-serif; font-weight:700; width:100%">
+        فهمت ✓
+      </button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.remove();
+  });
 }
 
 // ----------------------------------------------------------
