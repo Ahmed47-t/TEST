@@ -433,6 +433,9 @@ html, body {
   z-index: 999;
   backdrop-filter: blur(6px);
 }
+.loader[hidden] { display: none !important; }
+.toast[hidden]  { display: none !important; }
+[hidden]        { display: none !important; }
 .loader-box {
   background: #fff;
   padding: 36px 52px;

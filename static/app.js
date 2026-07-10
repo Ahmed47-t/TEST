@@ -94,6 +94,10 @@ btnReset.addEventListener("click", () => {
 // ----------------------------------------------------------
 // زر التحليل
 // ----------------------------------------------------------
+// إخفاء الـ loader في بداية تحميل الصفحة (احتياط)
+if (loader) loader.hidden = true;
+if (toast)  toast.hidden = true;
+
 btnRun.addEventListener("click", async () => {
   console.log("🖱️ زر التحليل ضُغط");
 
@@ -107,7 +111,7 @@ btnRun.addEventListener("click", async () => {
   }
 
   loader.hidden = false;
-  loaderDetail.textContent = "نجرّب Gemini 2.5 Pro أوّلاً (الأدق)...";
+  if (loaderDetail) loaderDetail.textContent = "نجرّب Gemini 2.5 Pro أوّلاً (الأدق)...";
   btnRun.disabled = true;
 
   const controller = new AbortController();
