@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>محاسب DZ الذكي — Gemini Vision للفواتير الجزائرية</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+</head>
+<body>
+
+<!-- ============ الشريط الجانبي ============ -->
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-logo">DZ</div>
+    <div class="brand-text">
+      <div class="brand-title">محاسب DZ الذكي</div>
+      <div class="brand-sub">مدعوم بـ Gemini Vision AI</div>
+    </div>
+  </div>
+
+  <nav class="menu">
+    <a class="menu-item active">
+      <span class="menu-icon">📷</span>
+      <span>تحليل فاتورة</span>
+    </a>
+  </nav>
+
+  <div class="models-info">
+    <div class="models-title">🤖 النماذج المتاحة</div>
+    {% for model in models %}
+    <div class="model-card">
+      <div class="model-name">{{ model.label }}</div>
+      <div class="model-meta">{{ model.accuracy }}</div>
+      <div class="model-tier">📊 {{ model.free_tier }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="sidebar-footer">
+    {% if has_api_key %}
+      ✅ Gemini API متّصل
+    {% else %}
+      ⚠️ GEMINI_API_KEY غير مضبوط
+    {% endif %}
+    <br>
+    <small>v2.0 — Multi-provider fallback</small>
+  </div>
+</aside>
+
+<!-- ============ المحتوى الرئيسي ============ -->
+<main class="main">
+
+  <header class="topbar">
+    <h1>
+      وحدة تحليل الفواتير الذكية
+      <span class="latin-title">Invoice Analysis with Gemini Vision</span>
+    </h1>
+    <div class="topbar-badges">
+      <div class="topbar-badge">🇩🇿 AR + FR</div>
+      <div class="topbar-badge topbar-badge-green">🤖 AI Powered</div>
+    </div>
+  </header>
+
+  {% if not has_api_key %}
+  <div class="api-key-warning">
+    <h3>⚠️ لم يتم ضبط GEMINI_API_KEY</h3>
+    <ol>
+      <li>اذهب إلى <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a></li>
+      <li>اضغط <strong>"Create API Key"</strong> وانسخ المفتاح</li>
+      <li>أنشئ ملف <code>.env</code> في مجلد المشروع بالمحتوى:
+        <pre>GEMINI_API_KEY=مفتاحك_هنا</pre>
+      </li>
+      <li>أعد تشغيل التطبيق</li>
+    </ol>
+    <p><strong>الاستعمال مجاني</strong> بحدود ~1550 فاتورة/يوم — بدون بطاقة ائتمان.</p>
+  </div>
+  {% endif %}
+
+  <div class="workspace">
+
+    <!-- ---------- العمود الأيمن: رفع الصورة ---------- -->
+    <section class="panel panel-right">
+      <div class="panel-head">
+        <span class="chip chip-blue">Gemini 2.5 Pro + 2.0 Flash</span>
+        <h2>📷 رفع الفاتورة</h2>
+      </div>
+
+      <div id="drop-zone" class="drop-zone">
+        <input type="file" id="file-input" accept="image/*" hidden>
+        <div class="drop-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <p class="drop-title">اسحب صورة الفاتورة هنا</p>
+          <p class="drop-sub">
+            أو اضغط للاختيار من جهازك<br>
+            JPG · PNG · WEBP — بحد أقصى 10 ميغابايت
+          </p>
+        </div>
+        <img id="preview" class="preview" alt="">
+      </div>
+
+      <div class="actions">
+        <button id="btn-reset" class="btn btn-ghost" disabled>
+          🔄 إعادة تعيين
+        </button>
+        <button id="btn-run" class="btn btn-primary" disabled {% if not has_api_key %}data-no-key{% endif %}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          <span>تحليل الفاتورة بـ AI</span>
+        </button>
+      </div>
+
+      <div id="model-status" class="model-status" hidden>
+        <div class="ms-title">📊 معلومات التحليل</div>
+        <div class="ms-row">
+          <span>النموذج المستعمل:</span>
+          <strong id="ms-model">—</strong>
+        </div>
+        <div class="ms-row">
+          <span>وقت المعالجة:</span>
+          <strong id="ms-time">—</strong>
+        </div>
+        <div class="ms-row" id="ms-validation-row">
+          <span>التحقّق الحسابي:</span>
+          <strong id="ms-validation">—</strong>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ---------- العمود الأيسر: النتائج ---------- -->
+    <section class="panel panel-left">
+      <div class="panel-head">
+        <h2>📋 نتائج التحليل</h2>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" data-tab="header">📄 معلومات الفاتورة</button>
+        <button class="tab" data-tab="parties">🏢 المورّد والزبون</button>
+        <button class="tab" data-tab="items">📦 المنتجات</button>
+        <button class="tab" data-tab="totals">💰 المجاميع</button>
+        <button class="tab" data-tab="json">🔧 JSON</button>
+      </div>
+
+      <!-- تبويب معلومات الفاتورة -->
+      <div class="tab-content active" data-tab="header">
+        <div class="field-grid">
+          <div class="field-row">
+            <label>رقم الفاتورة:</label>
+            <div class="field-value" data-key="invoice_number">—</div>
+          </div>
+          <div class="field-row">
+            <label>تاريخ الفاتورة:</label>
+            <div class="field-value" data-key="invoice_date">—</div>
+          </div>
+          <div class="field-row">
+            <label>تاريخ الاستحقاق:</label>
+            <div class="field-value" data-key="due_date">—</div>
+          </div>
+          <div class="field-row">
+            <label>نوع الوثيقة:</label>
+            <div class="field-value" data-key="document_type">—</div>
+          </div>
+          <div class="field-row">
+            <label>طريقة الدفع:</label>
+            <div class="field-value" data-key="payment_method">—</div>
+          </div>
+          <div class="field-row">
+            <label>شروط الدفع:</label>
+            <div class="field-value" data-key="payment_terms">—</div>
+          </div>
+        </div>
+        <div id="notes-block" class="notes-block" hidden>
+          <h4>📝 ملاحظات</h4>
+          <p id="notes-content">—</p>
+        </div>
+      </div>
+
+      <!-- تبويب المورّد والزبون -->
+      <div class="tab-content" data-tab="parties">
+        <div class="party-block">
+          <h3>🏢 المورّد (Fournisseur)</h3>
+          <div class="field-grid">
+            <div class="field-row"><label>الاسم:</label><div class="field-value" data-key="supplier.name">—</div></div>
+            <div class="field-row"><label>العنوان:</label><div class="field-value" data-key="supplier.address">—</div></div>
+            <div class="field-row"><label>الهاتف:</label><div class="field-value" data-key="supplier.phone">—</div></div>
+            <div class="field-row"><label>NIF:</label><div class="field-value" data-key="supplier.nif">—</div></div>
+            <div class="field-row"><label>RC:</label><div class="field-value" data-key="supplier.rc">—</div></div>
+            <div class="field-row"><label>NIS:</label><div class="field-value" data-key="supplier.nis">—</div></div>
+            <div class="field-row"><label>AI:</label><div class="field-value" data-key="supplier.ai">—</div></div>
+          </div>
+        </div>
+        <div class="party-block">
+          <h3>👤 الزبون (Client)</h3>
+          <div class="field-grid">
+            <div class="field-row"><label>الاسم:</label><div class="field-value" data-key="customer.name">—</div></div>
+            <div class="field-row"><label>العنوان:</label><div class="field-value" data-key="customer.address">—</div></div>
+            <div class="field-row"><label>NIF:</label><div class="field-value" data-key="customer.nif">—</div></div>
+            <div class="field-row"><label>RC:</label><div class="field-value" data-key="customer.rc">—</div></div>
+            <div class="field-row"><label>NIS:</label><div class="field-value" data-key="customer.nis">—</div></div>
+            <div class="field-row"><label>AI:</label><div class="field-value" data-key="customer.ai">—</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- تبويب المنتجات -->
+      <div class="tab-content" data-tab="items">
+        <div id="items-container">
+          <p class="empty-hint">ستظهر هنا قائمة المنتجات بعد التحليل.</p>
+        </div>
+      </div>
+
+      <!-- تبويب المجاميع -->
+      <div class="tab-content" data-tab="totals">
+        <div class="field-grid">
+          <div class="field-row">
+            <label>المبلغ الصافي (HT):</label>
+            <div class="field-value" data-key="totals.total_ht">—</div>
+          </div>
+          <div class="field-row highlight">
+            <label>مبلغ الضريبة (TVA):</label>
+            <div class="field-value" data-key="totals.tva_amount">—</div>
+          </div>
+          <div class="field-row">
+            <label>حقوق الطابع (Timbre):</label>
+            <div class="field-value" data-key="totals.stamp_duty">—</div>
+          </div>
+          <div class="field-row">
+            <label>الخصم (Discount):</label>
+            <div class="field-value" data-key="totals.discount">—</div>
+          </div>
+          <div class="field-row highlight-strong">
+            <label>المبلغ الإجمالي (TTC):</label>
+            <div class="field-value" data-key="totals.total_ttc">—</div>
+          </div>
+          <div class="field-row">
+            <label>العملة:</label>
+            <div class="field-value" data-key="totals.currency">DZD</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- تبويب JSON -->
+      <div class="tab-content" data-tab="json">
+        <pre id="json-view" class="json-view">// سيظهر ناتج JSON هنا بعد التحليل</pre>
+        <button id="btn-download" class="btn btn-ghost" hidden>⬇️ تحميل result.json</button>
+      </div>
+
+    </section>
+  </div>
+
+  <!-- طبقة التحميل -->
+  <div id="loader" class="loader" hidden>
+    <div class="loader-box">
+      <div class="spinner"></div>
+      <p><strong>جارٍ تحليل الفاتورة بالذكاء الاصطناعي...</strong></p>
+      <p><small id="loader-detail">نجرّب Gemini 2.5 Pro أوّلاً (الأدق)...</small></p>
+      <p><small style="color:#6b7280">⏱️ عادةً 3-10 ثوانٍ</small></p>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" hidden></div>
+
+</main>
+
+<script src="{{ url_for('static', filename='app.js') }}?v=3"></script>
+</body>
+</html>
