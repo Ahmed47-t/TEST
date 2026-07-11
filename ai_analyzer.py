@@ -24,6 +24,11 @@ from google import genai
 from google.genai import types
 from PIL import Image
 
+from document_types import (
+    DOCUMENT_TYPES,
+    build_journal_entry as build_je_for_doc,
+    get_doc_type,
+)
 from prompt_builder import SYSTEM_PROMPT, build_user_prompt
 from schema import INVOICE_SCHEMA
 from scf_accounts import (
@@ -216,117 +221,33 @@ class InvoiceAnalyzer:
                 item["scf_account"] = "607"  # استهلاكيات
                 item["scf_account_name"] = "Achats non stockés de matières et fournitures"
 
-        # 2) بناء قيد اليومية
-        journal_entry = InvoiceAnalyzer._build_journal_entry(data)
-        data["journal_entry"] = journal_entry
+        # 2) بناء قيد اليومية حسب نوع الوثيقة
+        doc_type_code = data.get("document_type") or "facture"
+        doc_info = get_doc_type(doc_type_code)
+        data["document_type_info"] = {
+            "code": doc_info["code"],
+            "label_ar": doc_info["label_ar"],
+            "label_fr": doc_info["label_fr"],
+            "icon": doc_info["icon"],
+            "generates_journal": doc_info["generates_journal"],
+        }
+
+        if doc_info["generates_journal"]:
+            journal_entry = build_je_for_doc(
+                data, doc_type_code,
+                get_account_info=get_account_info,
+                determine_tva_account=determine_tva_account,
+                suggest_account_for_item=suggest_account_for_item,
+            )
+            data["journal_entry"] = journal_entry
+        else:
+            data["journal_entry"] = None
+            data["journal_note"] = (
+                f"لا يوجد قيد محاسبي لهذا النوع ({doc_info['label_ar']}). "
+                "هذه وثيقة إعلامية أو التزامية فقط."
+            )
 
         return data
-
-    @staticmethod
-    def _build_journal_entry(data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        يبني قيد اليومية المحاسبي (Écriture comptable) من الفاتورة.
-
-        قيد شراء نموذجي:
-          Débit  6xx  ... Charges (المصاريف)          HT
-          Débit  44566 ou 44562 ... TVA déductible    TVA
-          Débit  6414 ... Droits de timbre            (إن وُجد)
-          Crédit 401 ... Fournisseur                  TTC
-        """
-        entries = []
-        items = data.get("items") or []
-        totals = data.get("totals") or {}
-        supplier = data.get("supplier") or {}
-        invoice_date = data.get("invoice_date")
-        invoice_number = data.get("invoice_number")
-
-        supplier_name = supplier.get("name", "المورد")
-        libelle = f"Facture {invoice_number or ''} - {supplier_name}".strip(" -")
-
-        # تجميع المبالغ حسب الحساب (لو عدّة منتجات لنفس الحساب)
-        charges_by_account: Dict[str, Dict[str, Any]] = {}
-        has_immobilisation = False
-
-        for item in items:
-            code = item.get("scf_account") or "607"
-            ht = item.get("total_ht") or 0
-            if not ht:
-                # احسب من quantity * unit_price إن كان total_ht مفقوداً
-                qty = item.get("quantity") or 0
-                pu = item.get("unit_price") or 0
-                ht = qty * pu
-
-            if code not in charges_by_account:
-                info = get_account_info(code)
-                charges_by_account[code] = {
-                    "account": code,
-                    "name": info["name_fr"] if info else item.get("scf_account_name", ""),
-                    "amount": 0,
-                }
-            charges_by_account[code]["amount"] += float(ht)
-
-            # هل هذا حساب من الطبقة 2 (تثبيتات)؟
-            if str(code).startswith("2"):
-                has_immobilisation = True
-
-        # 1) سطور الديْن (Débit) — المصاريف/التثبيتات
-        for code, info in charges_by_account.items():
-            entries.append({
-                "account": code,
-                "name": info["name"],
-                "libelle": libelle,
-                "debit": round(info["amount"], 2),
-                "credit": 0,
-            })
-
-        # 2) سطر TVA (Débit) إن كانت > 0
-        tva_amount = totals.get("tva_amount") or 0
-        if tva_amount:
-            tva_account = determine_tva_account(has_immobilisation)
-            tva_info = get_account_info(tva_account)
-            entries.append({
-                "account": tva_account,
-                "name": tva_info["name_fr"] if tva_info else "TVA déductible",
-                "libelle": libelle,
-                "debit": round(float(tva_amount), 2),
-                "credit": 0,
-            })
-
-        # 3) حقوق الطابع (Débit) إن وُجدت
-        stamp = totals.get("stamp_duty") or 0
-        if stamp:
-            entries.append({
-                "account": "6414",
-                "name": "Droits de timbre",
-                "libelle": libelle,
-                "debit": round(float(stamp), 2),
-                "credit": 0,
-            })
-
-        # 4) سطر المورد (Crédit) — المجموع الإجمالي TTC
-        ttc = totals.get("total_ttc") or 0
-        supplier_account = "404" if has_immobilisation else "401"
-        supplier_name_full = supplier.get("name", "Fournisseur")
-        supplier_label = "Fournisseurs d'immobilisations" if has_immobilisation else "Fournisseurs"
-        entries.append({
-            "account": supplier_account,
-            "name": f"{supplier_label} - {supplier_name_full}",
-            "libelle": libelle,
-            "debit": 0,
-            "credit": round(float(ttc), 2),
-        })
-
-        total_debit = sum(e["debit"] for e in entries)
-        total_credit = sum(e["credit"] for e in entries)
-
-        return {
-            "date": invoice_date,
-            "libelle": libelle,
-            "entries": entries,
-            "total_debit": round(total_debit, 2),
-            "total_credit": round(total_credit, 2),
-            "balanced": abs(total_debit - total_credit) < 0.01,
-        }
 
     # ---------------------------------------------------------
     # التحقّق الحسابي (منع الهلوسة)
@@ -335,26 +256,31 @@ class InvoiceAnalyzer:
     def _validate(data: Dict[str, Any]) -> Dict[str, Any]:
         """يتحقّق من اتساق الأرقام: TTC ≈ HT + TVA + Timbre."""
         checks: Dict[str, Any] = {"passed": True, "warnings": []}
-        totals = data.get("totals") or {}
-        ht = totals.get("total_ht")
-        tva = totals.get("tva_amount") or 0
-        timbre = totals.get("stamp_duty") or 0
-        discount = totals.get("discount") or 0
-        ttc = totals.get("total_ttc")
 
-        if ht is not None and ttc is not None:
-            try:
-                expected = float(ht) + float(tva) + float(timbre) - float(discount)
-                diff = abs(expected - float(ttc))
-                if diff > 1.0:
-                    checks["passed"] = False
-                    checks["warnings"].append(
-                        f"⚠️ عدم اتساق حسابي: HT ({ht}) + TVA ({tva}) "
-                        f"+ Timbre ({timbre}) − Discount ({discount}) = {expected:.2f}، "
-                        f"لكن TTC المُستخرج = {ttc}. الفرق = {diff:.2f}"
-                    )
-            except (ValueError, TypeError):
-                pass
+        doc_type = (data.get("document_type") or "facture").lower()
+
+        # التحقّق الحسابي ينطبق فقط على الفواتير
+        if doc_type in ("facture", "facture_vente", "facture_avoir", "devis"):
+            totals = data.get("totals") or {}
+            ht = totals.get("total_ht")
+            tva = totals.get("tva_amount") or 0
+            timbre = totals.get("stamp_duty") or 0
+            discount = totals.get("discount") or 0
+            ttc = totals.get("total_ttc")
+
+            if ht is not None and ttc is not None:
+                try:
+                    expected = float(ht) + float(tva) + float(timbre) - float(discount)
+                    diff = abs(expected - float(ttc))
+                    if diff > 1.0:
+                        checks["passed"] = False
+                        checks["warnings"].append(
+                            f"⚠️ عدم اتساق حسابي: HT ({ht}) + TVA ({tva}) "
+                            f"+ Timbre ({timbre}) − Discount ({discount}) = {expected:.2f}، "
+                            f"لكن TTC المُستخرج = {ttc}. الفرق = {diff:.2f}"
+                        )
+                except (ValueError, TypeError):
+                    pass
 
         # التحقّق من صيغة NIF (أرقام فقط)
         for party in ("supplier", "customer"):
@@ -422,12 +348,20 @@ class InvoiceAnalyzer:
                 else:
                     print(f"   ✔️ التحقّق الحسابي: نجح", flush=True)
 
-                # طباعة ملخّص قيد اليومية
-                je = output.get("journal_entry", {})
+                # طباعة نوع الوثيقة + قيد اليومية
+                doc_info = output.get("document_type_info", {})
+                if doc_info:
+                    print(f"   📄 نوع الوثيقة: {doc_info.get('icon', '')} "
+                          f"{doc_info.get('label_ar', '')}", flush=True)
+
+                je = output.get("journal_entry") or {}
                 if je.get("entries"):
-                    print(f"   📒 قيد اليومية: {len(je['entries'])} سطر، "
+                    print(f"   📒 قيد اليومية ({je.get('journal_type', '')}): "
+                          f"{len(je['entries'])} سطر، "
                           f"{'متوازن ✓' if je.get('balanced') else 'غير متوازن ✗'}",
                           flush=True)
+                elif output.get("journal_note"):
+                    print(f"   ℹ️  {output['journal_note']}", flush=True)
                 break
             else:
                 print(f"❌ {model_label} فشل ({elapsed:.1f}s): {output}", flush=True)

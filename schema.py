@@ -139,7 +139,43 @@ INVOICE_SCHEMA = {
         "notes": {"type": "string", "nullable": True,
                   "description": "أي ملاحظات إضافية مهمّة (مثل 'Arrêtée la présente facture...')"},
         "document_type": {"type": "string", "nullable": True,
-                          "description": "نوع الوثيقة: facture, devis, bon_livraison, recu, avoir"},
+                          "description": (
+                              "نوع الوثيقة (مهم جداً — يحدّد نوع القيد المحاسبي):\n"
+                              "  - 'facture' : فاتورة شراء (الأكثر شيوعاً)\n"
+                              "  - 'facture_vente' : فاتورة بيع صادرة\n"
+                              "  - 'facture_avoir' : فاتورة إرجاع/Avoir\n"
+                              "  - 'bon_commande' : طلبية (Bon de commande)\n"
+                              "  - 'bon_livraison' : وصل تسليم (BL)\n"
+                              "  - 'bon_reception' : وصل استلام (BR)\n"
+                              "  - 'cheque_bancaire' : شيك بنكي\n"
+                              "  - 'recu_paiement' : وصل دفع/إيصال\n"
+                              "  - 'devis' : عرض سعر / Proforma\n"
+                              "  - 'unknown' : غير معروف"
+                          )},
+        "document_number": {"type": "string", "nullable": True,
+                            "description": (
+                                "رقم الوثيقة إن كانت بديلاً عن رقم الفاتورة "
+                                "(مثلاً BL N°, BR N°, رقم الشيك)."
+                            )},
+        "document_date": {"type": "string", "nullable": True,
+                          "description": "تاريخ الوثيقة إن اختلف عن invoice_date"},
+        "bank_info": {
+            "type": "object",
+            "nullable": True,
+            "description": "معلومات بنكية (للشيكات فقط)",
+            "properties": {
+                "bank_name": {"type": "string", "nullable": True,
+                              "description": "اسم البنك (BNA, CPA, BEA, BADR...)"},
+                "cheque_number": {"type": "string", "nullable": True,
+                                  "description": "رقم الشيك"},
+                "account_number": {"type": "string", "nullable": True,
+                                   "description": "رقم الحساب المصرفي (RIB)"},
+                "beneficiary": {"type": "string", "nullable": True,
+                                "description": "المستفيد (Bénéficiaire)"},
+                "amount_in_words": {"type": "string", "nullable": True,
+                                    "description": "المبلغ بالحروف"},
+            },
+        },
         "confidence_notes": {"type": "string", "nullable": True,
                              "description": (
                                  "ملاحظات عن ثقة القراءة: إن كانت الصورة غير واضحة "
