@@ -3,19 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>محاسب DZ الذكي v3 — Multi-Document AI</title>
+  <title>محاسب DZ الذكي — إدارة الشركات</title>
   <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=5">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=6">
 </head>
 <body>
 
-<!-- ============ الشريط الجانبي ============ -->
-<aside class="sidebar">
+<!-- ============ الشريط الجانبي (يظهر بعد اختيار شركة) ============ -->
+<aside class="sidebar" id="sidebar" hidden>
   <div class="brand">
-    <div class="brand-logo">DZ</div>
+    <div class="brand-logo" id="brand-logo" style="background: linear-gradient(135deg, #2563eb, #7c3aed)">DZ</div>
     <div class="brand-text">
-      <div class="brand-title">محاسب DZ الذكي</div>
-      <div class="brand-sub">v3 · Multi-Document AI</div>
+      <div class="brand-title" id="current-company-name">—</div>
+      <div class="brand-sub" id="current-company-nif">—</div>
     </div>
   </div>
 
@@ -26,16 +26,20 @@
     </a>
     <a class="menu-item" data-view="results">
       <span class="menu-icon">📊</span>
-      <span>النتائج <span id="results-count" class="menu-count" hidden>0</span></span>
+      <span>نتائج آخر دفعة <span id="results-count" class="menu-count" hidden>0</span></span>
     </a>
     <a class="menu-item" data-view="journal">
       <span class="menu-icon">📒</span>
-      <span>الدفتر المُوحَّد</span>
+      <span>دفتر اليومية</span>
+    </a>
+    <a class="menu-item" data-view="companies-list">
+      <span class="menu-icon">🔄</span>
+      <span>تغيير الشركة</span>
     </a>
   </nav>
 
   <div class="doc-types-info">
-    <div class="models-title">📄 أنواع الوثائق المدعومة</div>
+    <div class="models-title">📄 الوثائق المدعومة</div>
     {% for dt in doc_types %}
       {% if dt.code != "unknown" %}
       <div class="doc-type-chip">
@@ -47,12 +51,7 @@
   </div>
 
   <div class="sidebar-footer">
-    {% if has_api_key %}
-      ✅ Gemini API متّصل
-    {% else %}
-      ⚠️ GEMINI_API_KEY غير مضبوط
-    {% endif %}
-    <br>
+    <small>محاسب DZ الذكي v4</small><br>
     <small>حد أقصى {{ max_batch }} ملف/دفعة</small>
   </div>
 </aside>
@@ -60,39 +59,131 @@
 <!-- ============ المحتوى الرئيسي ============ -->
 <main class="main">
 
-  <header class="topbar">
-    <h1>
-      محاسب DZ الذكي
-      <span class="latin-title">Multi-Document Accounting Analyzer</span>
-    </h1>
-    <div class="topbar-badges">
-      <div class="topbar-badge">🇩🇿 AR + FR</div>
-      <div class="topbar-badge topbar-badge-green">🤖 Gemini Vision</div>
-      <div class="topbar-badge topbar-badge-purple">🏦 SCF 2010</div>
+  <!-- =============================================== -->
+  <!-- View 0: قائمة الشركات (الشاشة الأولى)          -->
+  <!-- =============================================== -->
+  <div id="view-companies-list" class="view active companies-view">
+    <header class="companies-hero">
+      <div class="hero-logo">DZ</div>
+      <h1>محاسب DZ الذكي</h1>
+      <p>منصّة محاسبية ذكية للشركات الجزائرية</p>
+      {% if not has_api_key %}
+      <div class="api-key-warning-small">
+        ⚠️ ملف .env غير مُهيّأ — لن يعمل التحليل الذكي
+      </div>
+      {% endif %}
+    </header>
+
+    <div class="companies-toolbar">
+      <h2>🏢 اختر شركة أو أنشئ شركة جديدة</h2>
+      <button class="btn btn-primary" onclick="openCompanyForm()">
+        <span>➕</span>
+        <span>إضافة شركة جديدة</span>
+      </button>
     </div>
-  </header>
 
-  {% if not has_api_key %}
-  <div class="api-key-warning">
-    <h3>⚠️ لم يتم ضبط GEMINI_API_KEY</h3>
-    <ol>
-      <li>اذهب إلى <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a></li>
-      <li>اضغط <strong>"Create API Key"</strong> وانسخ المفتاح</li>
-      <li>أنشئ ملف <code>.env</code> في مجلد المشروع بالمحتوى:
-        <pre>GEMINI_API_KEY=مفتاحك_هنا</pre>
-      </li>
-      <li>أعد تشغيل التطبيق</li>
-    </ol>
+    <div id="companies-grid" class="companies-grid">
+      <div class="empty-hint" style="grid-column: 1 / -1">
+        <div style="font-size:48px; margin-bottom:12px">🏢</div>
+        <p>لا توجد شركات بعد. أنشئ شركتك الأولى.</p>
+      </div>
+    </div>
   </div>
-  {% endif %}
 
-  <!-- ================================================ -->
-  <!-- View 1: رفع الوثائق                                -->
-  <!-- ================================================ -->
-  <div id="view-upload" class="view active">
+  <!-- =============================================== -->
+  <!-- Modal: إنشاء/تعديل شركة                          -->
+  <!-- =============================================== -->
+  <div id="company-form-modal" class="modal-backdrop" hidden>
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 id="company-form-title">إضافة شركة جديدة</h3>
+        <button class="modal-close" onclick="closeCompanyForm()">✕</button>
+      </div>
+      <form id="company-form" onsubmit="return submitCompanyForm(event)">
+        <input type="hidden" id="company-id">
+
+        <div class="form-row">
+          <label>اسم الشركة <span class="req">*</span></label>
+          <input type="text" id="c-name" required placeholder="SARL ...">
+        </div>
+        <div class="form-row">
+          <label>النشاط</label>
+          <input type="text" id="c-activity" placeholder="تجارة عامة، خدمات، صناعة...">
+        </div>
+
+        <div class="form-grid">
+          <div class="form-row">
+            <label>الرقم الجبائي (NIF)</label>
+            <input type="text" id="c-nif" placeholder="000216...">
+          </div>
+          <div class="form-row">
+            <label>السجل التجاري (RC)</label>
+            <input type="text" id="c-rc" placeholder="16/00-...">
+          </div>
+          <div class="form-row">
+            <label>الرقم الإحصائي (NIS)</label>
+            <input type="text" id="c-nis" placeholder="0998...">
+          </div>
+          <div class="form-row">
+            <label>رقم المادة (AI)</label>
+            <input type="text" id="c-ai" placeholder="46786">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label>العنوان</label>
+          <input type="text" id="c-address" placeholder="حي ..., الجزائر">
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <label>الهاتف</label>
+            <input type="tel" id="c-phone" placeholder="+213 ...">
+          </div>
+          <div class="form-row">
+            <label>البريد الإلكتروني</label>
+            <input type="email" id="c-email" placeholder="contact@...">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label>لون شعار الشركة</label>
+          <div class="color-picker">
+            <button type="button" class="color-swatch" data-color="#2563eb" style="background:#2563eb"></button>
+            <button type="button" class="color-swatch" data-color="#059669" style="background:#059669"></button>
+            <button type="button" class="color-swatch" data-color="#dc2626" style="background:#dc2626"></button>
+            <button type="button" class="color-swatch" data-color="#d97706" style="background:#d97706"></button>
+            <button type="button" class="color-swatch" data-color="#7c3aed" style="background:#7c3aed"></button>
+            <button type="button" class="color-swatch" data-color="#0891b2" style="background:#0891b2"></button>
+            <button type="button" class="color-swatch" data-color="#be185d" style="background:#be185d"></button>
+            <button type="button" class="color-swatch" data-color="#1e2a4a" style="background:#1e2a4a"></button>
+          </div>
+          <input type="hidden" id="c-logo-color" value="#2563eb">
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" onclick="closeCompanyForm()">إلغاء</button>
+          <button type="submit" class="btn btn-primary" id="submit-company-btn">حفظ الشركة</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =============================================== -->
+  <!-- View 1: رفع الوثائق (بعد اختيار شركة)          -->
+  <!-- =============================================== -->
+  <div id="view-upload" class="view">
+    <header class="topbar">
+      <h1>
+        رفع وتحليل الوثائق
+        <span class="latin-title">Document Analyzer</span>
+      </h1>
+      <div class="topbar-badges">
+        <div class="topbar-badge">🇩🇿 AR + FR</div>
+        <div class="topbar-badge topbar-badge-purple">🏦 SCF 2010</div>
+      </div>
+    </header>
+
     <div class="workspace">
-
-      <!-- عمود الرفع -->
       <section class="panel panel-upload">
         <div class="panel-head">
           <span class="chip chip-blue">Batch Upload · حتى {{ max_batch }} ملف</span>
@@ -118,10 +209,8 @@
         </div>
 
         <div class="actions">
-          <button id="btn-reset" class="btn btn-ghost" disabled>
-            🗑️ مسح الكل
-          </button>
-          <button id="btn-run" class="btn btn-primary" disabled {% if not has_api_key %}data-no-key{% endif %}>
+          <button id="btn-reset" class="btn btn-ghost" disabled>🗑️ مسح الكل</button>
+          <button id="btn-run" class="btn btn-primary" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <polygon points="5 3 19 12 5 21 5 3"/>
             </svg>
@@ -129,10 +218,9 @@
           </button>
         </div>
 
-        <!-- شريط التقدّم -->
         <div id="progress-box" class="progress-box" hidden>
           <div class="progress-label">
-            <span>جارٍ المعالجة...</span>
+            <span>جارٍ التحليل...</span>
             <span id="progress-text">0 / 0</span>
           </div>
           <div class="progress-bar-wrap">
@@ -140,19 +228,14 @@
           </div>
           <div id="progress-current" class="progress-current"></div>
         </div>
-
       </section>
 
-      <!-- عمود الملخّص السريع -->
       <section class="panel panel-summary">
-        <div class="panel-head">
-          <h2>📊 الملخّص السريع</h2>
-        </div>
+        <div class="panel-head"><h2>📊 الملخّص السريع</h2></div>
 
         <div id="empty-summary" class="empty-hint">
           <p style="font-size:16px; margin-bottom:12px">🚀 جاهز للتحليل</p>
           <p>ارفع صورة أو أكثر واضغط <strong>"تحليل الوثائق"</strong></p>
-          <p style="margin-top:16px">النظام سيتعرّف تلقائياً على نوع كل وثيقة ويولّد القيد المحاسبي المناسب.</p>
         </div>
 
         <div id="summary-content" hidden>
@@ -160,7 +243,7 @@
             <div class="stat-card stat-primary">
               <div class="stat-icon">📄</div>
               <div class="stat-num" id="stat-total">0</div>
-              <div class="stat-label">إجمالي الوثائق</div>
+              <div class="stat-label">إجمالي</div>
             </div>
             <div class="stat-card stat-success">
               <div class="stat-icon">✅</div>
@@ -175,7 +258,7 @@
             <div class="stat-card stat-warning">
               <div class="stat-icon">📒</div>
               <div class="stat-num" id="stat-entries">0</div>
-              <div class="stat-label">قيود مُولَّدة</div>
+              <div class="stat-label">قيود</div>
             </div>
           </div>
 
@@ -201,24 +284,20 @@
     </div>
   </div>
 
-  <!-- ================================================ -->
-  <!-- View 2: النتائج المتعدّدة                          -->
-  <!-- ================================================ -->
+  <!-- =============================================== -->
+  <!-- View 2: نتائج آخر دفعة                          -->
+  <!-- =============================================== -->
   <div id="view-results" class="view">
     <div class="panel panel-full">
       <div class="panel-head">
         <div>
-          <h2>📋 نتائج التحليل</h2>
-          <p class="panel-subtitle" id="results-subtitle">اضغط على أي وثيقة لعرض تفاصيلها</p>
+          <h2>📋 نتائج آخر دفعة</h2>
+          <p class="panel-subtitle">اضغط على أي وثيقة لعرض تفاصيلها</p>
         </div>
         <button class="btn btn-ghost" onclick="switchView('upload')">← رجوع للرفع</button>
       </div>
-
       <div class="results-layout">
-        <!-- قائمة الوثائق -->
         <aside class="docs-list" id="docs-list"></aside>
-
-        <!-- تفاصيل الوثيقة المُختارة -->
         <div class="doc-detail" id="doc-detail">
           <p class="empty-hint">← اختر وثيقة من القائمة</p>
         </div>
@@ -226,24 +305,23 @@
     </div>
   </div>
 
-  <!-- ================================================ -->
-  <!-- View 3: الدفتر المُوحَّد                            -->
-  <!-- ================================================ -->
+  <!-- =============================================== -->
+  <!-- View 3: دفتر اليومية المتراكم للشركة            -->
+  <!-- =============================================== -->
   <div id="view-journal" class="view">
     <div class="panel panel-full">
       <div class="panel-head">
         <div>
-          <h2>📒 الدفتر المحاسبي المُوحَّد</h2>
-          <p class="panel-subtitle">كل القيود المُولَّدة من الوثائق المُحلَّلة في مكان واحد</p>
+          <h2>📒 دفتر اليومية الشامل</h2>
+          <p class="panel-subtitle">كل قيود الشركة منذ التسجيل</p>
         </div>
         <div>
-          <button class="btn btn-ghost" onclick="exportAllJournalsCSV()">📥 تصدير الكل CSV</button>
-          <button class="btn btn-ghost" onclick="switchView('upload')">← رجوع للرفع</button>
+          <button class="btn btn-ghost" onclick="loadCompanyJournal()">🔄 تحديث</button>
+          <button class="btn btn-ghost" onclick="exportCompanyJournalCSV()">📥 تصدير كامل CSV</button>
         </div>
       </div>
-
-      <div id="consolidated-journal">
-        <p class="empty-hint">لم يتم تحليل أي وثيقة بعد.</p>
+      <div id="journal-container">
+        <p class="empty-hint">لم يتم تحليل أي وثيقة بعد لهذه الشركة.</p>
       </div>
     </div>
   </div>
@@ -251,8 +329,20 @@
   <!-- Toast -->
   <div id="toast" class="toast" hidden></div>
 
+  <!-- Confirm Dialog -->
+  <div id="confirm-modal" class="modal-backdrop" hidden>
+    <div class="modal-box" style="max-width:420px">
+      <div class="modal-header"><h3 id="confirm-title">تأكيد</h3></div>
+      <p id="confirm-msg" style="padding:16px 0; font-size:14px; line-height:1.7"></p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeConfirm(false)">إلغاء</button>
+        <button class="btn btn-primary" id="confirm-ok-btn" onclick="closeConfirm(true)">تأكيد</button>
+      </div>
+    </div>
+  </div>
+
 </main>
 
-<script src="{{ url_for('static', filename='app.js') }}?v=5"></script>
+<script src="{{ url_for('static', filename='app.js') }}?v=6"></script>
 </body>
 </html>

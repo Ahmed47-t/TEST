@@ -15,6 +15,9 @@ static/results/*
 !static/uploads/.gitkeep
 !static/results/.gitkeep
 
+# بيانات الشركات (Multi-tenant)
+data/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -39,39 +39,16 @@ from scf_accounts import (
 
 
 # =========================================================
-# إعدادات المزوّدين (Multi-provider fallback مثل TaxHacker)
+# إعدادات المزوّدين (Multi-provider fallback)
+# ⚠️ ملاحظة داخلية: الأسماء الفنية للنماذج تبقى في الكود لأنّها
+# مطلوبة للاستدعاء البرمجي، لكن لا يُعرَض أي منها للمستخدم في الواجهة.
 # =========================================================
 DEFAULT_MODELS = [
-    {
-        "name": "gemini-2.5-pro",
-        "label": "Gemini 2.5 Pro",
-        "accuracy": "94% على الفواتير الممسوحة",
-        "free_tier": "~50 طلب/يوم",
-    },
-    {
-        "name": "gemini-2.5-flash",
-        "label": "Gemini 2.5 Flash",
-        "accuracy": "~91% مع سرعة عالية",
-        "free_tier": "~1500 طلب/يوم",
-    },
-    {
-        "name": "gemini-2.0-flash",
-        "label": "Gemini 2.0 Flash",
-        "accuracy": "~89% - Fallback مستقر",
-        "free_tier": "~1500 طلب/يوم",
-    },
-    {
-        "name": "gemini-flash-latest",
-        "label": "Gemini Flash Latest",
-        "accuracy": "~88% - alias مستقر",
-        "free_tier": "متغيّرة",
-    },
-    {
-        "name": "gemini-2.0-flash-lite",
-        "label": "Gemini 2.0 Flash Lite",
-        "accuracy": "~85% - أخفّ نسخة",
-        "free_tier": "أعلى حصّة",
-    },
+    {"name": "gemini-2.5-pro",        "label": "AI Model 1"},
+    {"name": "gemini-2.5-flash",      "label": "AI Model 2"},
+    {"name": "gemini-2.0-flash",      "label": "AI Model 3"},
+    {"name": "gemini-flash-latest",   "label": "AI Model 4"},
+    {"name": "gemini-2.0-flash-lite", "label": "AI Model 5"},
 ]
 
 
@@ -313,12 +290,12 @@ class InvoiceAnalyzer:
             result.elapsed_seconds = time.time() - t_total
             return result
 
-        # جرّب النماذج بالترتيب
-        for model_config in self.models:
+        # جرّب النماذج بالترتيب (بدون كشف أسمائها في السجل)
+        for attempt_idx, model_config in enumerate(self.models, 1):
             model_name = model_config["name"]
             model_label = model_config["label"]
 
-            print(f"\n🧠 محاولة: {model_label} ({model_name})", flush=True)
+            print(f"\n🔎 المحاولة {attempt_idx}/{len(self.models)} ...", flush=True)
             t = time.time()
             success, output = self._call_model(model_config, img)
             elapsed = time.time() - t
@@ -331,7 +308,7 @@ class InvoiceAnalyzer:
             }
 
             if success:
-                print(f"✅ {model_label} نجح في {elapsed:.1f}s", flush=True)
+                print(f"✅ نجحت المعالجة في {elapsed:.1f}s", flush=True)
                 # إثراء بـ SCF + بناء قيد اليومية
                 output = self._enrich_scf(output)
                 result.success = True
@@ -364,42 +341,39 @@ class InvoiceAnalyzer:
                     print(f"   ℹ️  {output['journal_note']}", flush=True)
                 break
             else:
-                print(f"❌ {model_label} فشل ({elapsed:.1f}s): {output}", flush=True)
+                # نُقصر رسالة الخطأ في السجل (لا نكشف اسم المزوّد)
+                err_short = str(output)[:120]
+                print(f"❌ فشلت المحاولة {attempt_idx} ({elapsed:.1f}s): {err_short}", flush=True)
                 attempt["error"] = str(output)
                 result.attempts.append(attempt)
                 continue
 
         if not result.success:
             # حلّل نوع الخطأ الأكثر شيوعاً وأعطِ نصيحة للمستخدم
+            # (بدون ذكر اسم مزوّد الـ AI)
             all_errors = " ".join(a.get("error", "") for a in result.attempts)
 
             if "RESOURCE_EXHAUSTED" in all_errors or "429" in all_errors:
                 result.error = (
-                    "🚫 تجاوزت الحصّة اليومية المجانية لكل نماذج Gemini.\n\n"
-                    "الحلول:\n"
+                    "🚫 تجاوزت الحصّة اليومية المجانية.\n\n"
+                    "الحلول الممكنة:\n"
                     "1. انتظر 24 ساعة (الحصّة تتجدّد يومياً)\n"
-                    "2. أنشئ مفتاح API جديد في مشروع Google Cloud جديد:\n"
-                    "   → https://aistudio.google.com/app/apikey\n"
-                    "   → اضغط 'Create API key in NEW project'\n"
-                    "3. أو ادفع مقابل الاستعمال (~$0.0001/فاتورة)"
+                    "2. اطلب من مسؤول النظام تحديث المفتاح\n"
+                    "3. اطلب ترقية للاستعمال المدفوع (~$0.0001/وثيقة)"
                 )
             elif "PERMISSION_DENIED" in all_errors or "403" in all_errors:
                 result.error = (
-                    "🔒 مشروعك على Google Cloud مرفوض من الوصول للنموذج.\n\n"
-                    "الحل: أنشئ مفتاح API جديد في مشروع جديد:\n"
-                    "→ https://aistudio.google.com/app/apikey\n"
-                    "→ اضغط 'Create API key in NEW project'"
+                    "🔒 مفتاح النظام مرفوض من الوصول لهذا النموذج.\n\n"
+                    "الحل: اطلب من مسؤول النظام إعادة إعداد المفتاح."
                 )
             elif "API_KEY_INVALID" in all_errors or "401" in all_errors:
                 result.error = (
-                    "🔑 مفتاح GEMINI_API_KEY غير صحيح.\n\n"
-                    "تحقّق من ملف .env — يجب أن يكون بهذا الشكل:\n"
-                    "GEMINI_API_KEY=AIzaSy...\n"
-                    "(بدون علامات اقتباس، بدون مسافات)"
+                    "🔑 المفتاح غير صحيح.\n\n"
+                    "الحل: تحقّق من ملف .env في مجلد المشروع."
                 )
             else:
-                result.error = "فشلت جميع النماذج. راجع رسائل الخطأ في PowerShell."
-            print(f"\n❌ فشل التحليل بعد {len(result.attempts)} محاولات", flush=True)
+                result.error = "تعذّرت معالجة الوثيقة. راجع سجل النظام."
+            print(f"\n❌ فشلت المعالجة بعد {len(result.attempts)} محاولات", flush=True)
 
         result.elapsed_seconds = time.time() - t_total
         print(f"⏱️  الوقت الإجمالي: {result.elapsed_seconds:.1f}s", flush=True)
